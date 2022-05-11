@@ -1,2 +1,5 @@
 env/
-datasets/
+spam-classifier/
+zips/
+*.pkl
+
