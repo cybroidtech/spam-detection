@@ -24,6 +24,8 @@ RUN apt-get update && \
 RUN apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+RUN chmod +x ./entry_point.sh
+
 RUN virtualenv -p python3 ./env
 
 RUN ./env/bin/python3 -m pip install -r requirements.txt
