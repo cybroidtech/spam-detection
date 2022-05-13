@@ -2,5 +2,6 @@ env/
 spam-classifier/
 zips/
 ignored/
+models/
 *.pkl
 

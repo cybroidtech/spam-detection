@@ -1,7 +1,10 @@
 FROM python:3.7-slim
 
-COPY ./app ./app/app
-COPY ./requirements.txt ./app/requirements.txt
+COPY ./app /app/app
+COPY ./.env /app/.env 
+COPY ./models /app/models
+COPY ./entry_point.sh /app/entry_point.sh
+COPY ./requirements.txt /app/requirements.txt
 
 WORKDIR /app
 
@@ -24,3 +27,5 @@ RUN apt-get autoremove -y \
 RUN virtualenv -p python3 ./env
 
 RUN ./env/bin/python3 -m pip install -r requirements.txt
+
+CMD [ "entry_point.sh" ]
