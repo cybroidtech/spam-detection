@@ -26,8 +26,8 @@ RUN apt-get autoremove -y \
 
 RUN chmod +x ./entry_point.sh
 
-RUN virtualenv -p python3 ./env
+RUN virtualenv -p python3 env
 
-RUN ./env/bin/python3 -m pip install -r requirements.txt
+RUN env/bin/python3 -m pip install -r requirements.txt
 
 CMD [ "entry_point.sh" ]
