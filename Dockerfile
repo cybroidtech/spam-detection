@@ -8,6 +8,8 @@ COPY ./requirements.txt /app/requirements.txt
 
 WORKDIR /app
 
+SHELL ["/bin/bash", "-c"] 
+
 RUN apt-get update && \
     apt-get install -y \
     build-essential \
