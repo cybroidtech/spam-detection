@@ -1,17 +1,25 @@
-import json
-from multiprocessing.spawn import spawn_main
 import pathlib
 from typing import Optional
 from fastapi import FastAPI
-from keras.models import load_model
-from keras_preprocessing.text import tokenizer_from_json
-from keras_preprocessing.sequence import pad_sequences
+from fastapi.responses import StreamingResponse
+from app.config import get_settings
+from app.db import get_session
+
+from app.ml import SpamModel
+from app.models import SpamInference
+
+from cassandra.cqlengine.management import sync_table
+from cassandra.query import SimpleStatement
+
+from app.schema import Query
 
 app = FastAPI(
     version="1.0.0",
     title="DrexSpam",
     description="An Artificial Intelligence based Spam detector API using machine learning",
 )
+
+SETTINGS = get_settings()
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
 
@@ -22,34 +30,60 @@ SPAM_TOKENIZER_PATH = SPAM_MODEL_DIR / "spam-classifer-tokenizer.json"
 SPAM_METADATA_PATH = SPAM_MODEL_DIR / "spam-classifer-metadata.json"
 
 SPAM_MODEL = None
-SPAM_TOKENIZER = None
-SPAM_METADATA = {}
-LEGEND_INVERTED = {}
+DB_SESSION = None
+SPAM_INFERENCE = SpamInference
 
 @app.on_event("startup")
 def on_startup():
-    global SPAM_MODEL, SPAM_TOKENIZER, SPAM_METADATA, LEGEND_INVERTED
-    # Load model
-    if SPAM_MODEL_PATH.exists():
-        SPAM_MODEL = load_model(SPAM_MODEL_PATH)
-    if SPAM_TOKENIZER_PATH.exists():
-        t_json = SPAM_TOKENIZER_PATH.read_text()
-        SPAM_TOKENIZER = tokenizer_from_json(t_json)
-    if SPAM_METADATA_PATH.exists():
-        SPAM_METADATA = json.loads(SPAM_METADATA_PATH.read_text())
-        LEGEND_INVERTED = SPAM_METADATA["labels_legend_inverted"]
-
-def predict(query: str):
-    sequences = SPAM_TOKENIZER.texts_to_sequences([query])
-    maxlen = SPAM_METADATA.get("max_sequence") or 280
-    x_input = pad_sequences(sequences, maxlen=280)
-    preds_array = SPAM_MODEL.predict(x_input)
-    return {}
-
+    global SPAM_MODEL, DB_SESSION
+    SPAM_MODEL = SpamModel(
+        model_path = SPAM_MODEL_PATH,
+        tokenizer_path = SPAM_TOKENIZER_PATH,
+        metadata_path= SPAM_METADATA_PATH,
+    )
+    DB_SESSION = get_session()
+    sync_table(SPAM_INFERENCE)
 
 @app.get("/")
 def read_index(q: Optional[str] = None):
-    global SPAM_MODEL, SPAM_METADATA
-    query = q or "Hello world"
-    print(SPAM_MODEL)
-    return {"query": query, **SPAM_METADATA}
+    return {"hello": "world"}
+
+@app.post("/")
+def create_infercence(q: Query):
+    global SPAM_MODEL
+    query = q.query or "Hello world"
+    preds_dict = SPAM_MODEL.predict_text(query)
+    top = preds_dict.get("top")
+    data = {"query": query, **top}
+    obj = SPAM_INFERENCE.objects.create(**data)
+    return obj
+
+@app.get("/inferences")
+def get_inferences():
+    q = SPAM_INFERENCE.objects.all()
+    return list(q)
+
+@app.get("/inferences/{my_uuid}")
+def get_inference_detail(my_uuid):
+    obj = SPAM_INFERENCE.objects.get(uuid=my_uuid)
+    return obj 
+
+def fetch_row(statement: SimpleStatement, fetch_size: int, session=None):
+    statement.fetch_size = fetch_size
+    result_set = session.execute(statement)
+    has_pages = result_set.has_more_pages
+    yield "uuid,label,confidence,query,model_version\n"
+    while has_pages:
+        for row in result_set.current_rows:
+            yield f"{row['uuid']},{row['label']},{row['confidence']},{row['query']},{row['model_version']}\n"
+        has_pages = result_set.has_more_pages
+        result_set = session.execute(statement, paging_state=result_set.paging_state)
+
+@app.get("/dataset")
+def export_inferences():
+    global DB_SESSION
+    cql_query = "SELECT * FROM spam_inferences.spam_inference LIMIT 10000"
+    # rows = DB_SESSION.execute(cql_query)
+    statement = SimpleStatement(cql_query)
+    return StreamingResponse(fetch_row(statement, 25, DB_SESSION))
+

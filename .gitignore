@@ -1,5 +1,6 @@
 env/
 spam-classifier/
 zips/
+ignored/
 *.pkl
 
