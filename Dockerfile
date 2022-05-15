@@ -34,4 +34,4 @@ RUN source env/bin/activate
 
 RUN env/bin/python3 -m pip install -r requirements.txt
 
-CMD [ "entry_point.sh" ]
+CMD [ "./entry_point.sh" ]
